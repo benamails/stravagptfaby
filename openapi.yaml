@@ -3,7 +3,7 @@ info:
   title: Strava for GPT (Backend only)
   version: 1.0.1
 servers:
-  - url: https://stravagpt.vercel.app
+  - url: https://stravagptfaby.vercel.app
 
 paths:
   /api/token:
