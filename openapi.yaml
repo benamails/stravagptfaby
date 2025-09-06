@@ -1,0 +1,174 @@
+openapi: 3.1.0
+info:
+  title: Strava for GPT (Backend only)
+  version: 1.0.1
+servers:
+  - url: https://stravagpt.vercel.app
+
+paths:
+  /api/token:
+    post:
+      operationId: exchangeOtcForAppJwt
+      summary: Exchange one-time code (OTC) for an app JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtcRequest"
+            examples:
+              sample:
+                value: { code: "AbC123OTC" }
+      responses:
+        "200":
+          $ref: "#/components/responses/TokenOk"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/me:
+    get:
+      operationId: getCurrentAthlete
+      summary: Get current Strava athlete profile
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          $ref: "#/components/responses/AthleteOk"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/activities:
+    get:
+      operationId: listRecentActivities
+      summary: List activities from the last 28 days
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          $ref: "#/components/responses/ActivitiesOk"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    TokenOk:
+      description: App JWT
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/TokenResponse"
+
+    AthleteOk:
+      description: Athlete profile
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Athlete"
+
+    ActivitiesOk:
+      description: Activities array
+      content:
+        application/json:
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/Activity"
+
+    BadRequest:
+      description: Invalid or expired code / invalid input
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    Unauthorized:
+      description: Missing/invalid token or no Strava link
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    ServerError:
+      description: Server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    OtcRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          description: One-time code issued at /api/oauth/callback
+
+    TokenResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: App JWT to call protected endpoints
+        token_type:
+          type: string
+          example: bearer
+        expires_in:
+          type: integer
+          example: 604800
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: server_error
+        error_description:
+          type: string
+          example: Something went wrong
+        details:
+          description: Optional raw details
+          nullable: true
+
+    Athlete:
+      type: object
+      description: Minimal Strava athlete shape (opaque to the API)
+      properties:
+        id: { type: integer, example: 123456 }
+        username: { type: string, nullable: true }
+        firstname: { type: string, example: "Jane" }
+        lastname: { type: string, example: "Doe" }
+        city: { type: string, nullable: true }
+        country: { type: string, nullable: true }
+        sex: { type: string, enum: ["M","F"], nullable: true }
+        premium: { type: boolean, example: false }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      additionalProperties: true
+
+    Activity:
+      type: object
+      description: Minimal activity shape (fields vary by Strava)
+      properties:
+        id: { type: integer, example: 16711309904 }
+        name: { type: string, example: "Morning Run" }
+        type: { type: string, example: "Run" }
+        sport_type: { type: string, example: "Run" }
+        start_date: { type: string, format: date-time }
+        moving_time: { type: integer, example: 4835 }
+        elapsed_time: { type: integer, example: 4971 }
+        distance: { type: number, example: 13618.6 }
+        average_heartrate: { type: number, nullable: true, example: 124.6 }
+        average_watts: { type: number, nullable: true }
+        total_elevation_gain: { type: number, example: 55 }
+      additionalProperties: true
