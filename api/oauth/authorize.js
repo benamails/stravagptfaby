@@ -1,6 +1,10 @@
 // api/oauth/authorize.js
 import { makeLogger } from '../_log.js'
 
+const BASE = process.env.PUBLIC_BASE_URL
+const CID  = process.env.STRAVA_CLIENT_ID
+
+// ChatGPT / OpenAI builder hosts that are allowed to receive the OAuth callback
 const TRUSTED_HOSTS = new Set(['chat.openai.com','chatgpt.com','platform.openai.com'])
 
 function b64url(obj){ return Buffer.from(JSON.stringify(obj)).toString('base64url') }
@@ -12,35 +16,26 @@ function isAllowedToolRedirect(u) {
   } catch { return false }
 }
 
-function getEnv(name) {
-  const val = process.env[name]
-  if (!val) throw new Error(`Missing ${name}`)
-  return val
-}
-
 export default async function handler(req, res) {
-  // Empêche d'éventuels caches intermédiaires de réutiliser une réponse
-  res.setHeader('Cache-Control', 'no-store')
-
   const log = makeLogger({ route: '/api/oauth/authorize', method: req.method })
   try {
     if (req.method !== 'GET' && req.method !== 'POST') {
       return res.status(405).end()
     }
 
-    // ⚠️ Lecture des ENV à CHAQUE requête (pas au top-level)
-    const BASE = getEnv('PUBLIC_BASE_URL')
-    const CID  = getEnv('STRAVA_CLIENT_ID')
+    if (!BASE) throw new Error('Missing PUBLIC_BASE_URL')
+    if (!CID)  throw new Error('Missing STRAVA_CLIENT_ID')
 
-    // GET (builder) ou POST (tests)
+    // Accept both GET (ChatGPT builder) and POST (manual tests)
     const input = req.method === 'GET'
-      ? (req.query || {})
+      ? req.query || {}
       : (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {}))
 
     const scope = (input.scope || 'read,activity:read_all').replace(/\s+/g, ',')
     const tool_redirect_uri = input.redirect_uri
     const tool_state = input.state
 
+    // Hard requirement: we must know where to send the user back in ChatGPT.
     if (!tool_redirect_uri || !isAllowedToolRedirect(tool_redirect_uri)) {
       log.warn('Missing or untrusted redirect_uri', { has: !!tool_redirect_uri, redirect_uri: tool_redirect_uri || null })
       return res.status(400).json({
@@ -64,12 +59,9 @@ export default async function handler(req, res) {
 
     const url = `https://www.strava.com/oauth/authorize?${params.toString()}`
     log.info('Redirecting to Strava', {
-      cidUsed: CID,                 // ← LOG du client_id réellement utilisé
-      redirect_uri,
-      scope,
+      redirect_uri, scope,
       stateLen: outState.length,
       toolHost: new URL(tool_redirect_uri).host,
-      baseHost: new URL(BASE).host,
     })
     res.writeHead(302, { Location: url })
     res.end()
