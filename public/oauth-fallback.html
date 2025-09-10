@@ -6,23 +6,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { color-scheme: light dark; }
-    body {
-      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
-      display: grid; min-height: 100dvh; place-items: center; background: Canvas; color: CanvasText;
-    }
-    .card {
-      width: min(640px, 92vw); border: 1px solid color-mix(in oklch, CanvasText 15%, Canvas);
-      border-radius: 14px; padding: 24px; box-shadow: 0 4px 24px color-mix(in oklch, CanvasText 10%, transparent);
-    }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
+      display: grid; min-height: 100dvh; place-items: center; background: Canvas; color: CanvasText; }
+    .card { width: min(640px, 92vw); border: 1px solid color-mix(in oklch, CanvasText 15%, Canvas);
+      border-radius: 14px; padding: 24px; box-shadow: 0 4px 24px color-mix(in oklch, CanvasText 10%, transparent); }
     h1 { margin: 0 0 8px; font-size: 1.25rem; }
     p { margin: 8px 0; line-height: 1.45; }
     code { padding: 2px 6px; border-radius: 6px; background: color-mix(in oklch, CanvasText 10%, Canvas); }
     .actions { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
-    button, a.btn {
-      appearance: none; border: 1px solid color-mix(in oklch, CanvasText 20%, Canvas);
+    button, a.btn { appearance: none; border: 1px solid color-mix(in oklch, CanvasText 20%, Canvas);
       background: color-mix(in oklch, Canvas 96%, CanvasText 4%); color: CanvasText;
-      padding: 10px 14px; border-radius: 10px; cursor: pointer; text-decoration: none;
-    }
+      padding: 10px 14px; border-radius: 10px; cursor: pointer; text-decoration: none; }
     button:hover, a.btn:hover { filter: brightness(0.98); }
     .hint { opacity: 0.75; font-size: 0.95rem; }
   </style>
@@ -30,30 +24,16 @@
 <body>
   <main class="card" role="main" aria-live="polite">
     <h1>Finalisation… Retour automatique indisponible</h1>
-    <p>
-      Vous avez bien autorisé l’accès à Strava, mais nous n’avons pas pu revenir automatiquement à votre conversation.
-    </p>
-    <p class="hint">
-      Fermez cette fenêtre et revenez à ChatGPT. Si besoin, relancez votre demande (ex. <code>connecte Strava</code> ou <code>récupère mes activités</code>).
-    </p>
-
+    <p>Vous avez bien autorisé l’accès à Strava, mais nous n’avons pas pu revenir automatiquement à votre conversation.</p>
+    <p class="hint">Fermez cette fenêtre et revenez à ChatGPT. Si besoin, relancez votre demande (ex. <code>connecte Strava</code> ou <code>récupère mes activités</code>).</p>
     <div class="actions">
       <button type="button" onclick="window.close()">Fermer la fenêtre</button>
       <button type="button" onclick="history.back()">Revenir en arrière</button>
       <a class="btn" href="/" rel="noopener">Aller à l’accueil</a>
     </div>
-
-    <p class="hint" style="margin-top:16px">
-      Astuce : si le retour automatique échoue souvent, vérifiez que l’URL d’autorisation a bien été lancée depuis le bouton prévu dans la conversation.
-    </p>
   </main>
-
   <script>
-    // Petits logs non invasifs pour aider au debug si l'utilisateur ouvre la console.
-    console.info("[oauth-fallback] loaded", { ts: new Date().toISOString() });
-    try {
-      console.info("[oauth-fallback] opener", { hasOpener: !!window.opener });
-    } catch (_) {}
+    console.info("[oauth-fallback] loaded", { ts: new Date().toISOString(), hasOpener: !!window.opener });
   </script>
 </body>
 </html>
