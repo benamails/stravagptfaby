@@ -1,3 +1,5 @@
+export const runtime = "nodejs";
+
 import { NextRequest, NextResponse } from "next/server";
 import { buildAuthorizeUrl } from "@/lib/strava";
 import { genReqId } from "@/lib/utils";
