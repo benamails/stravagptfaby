@@ -1,6 +1,6 @@
 // lib/strava.ts
 // Wrappers HTTP pour l’API Strava : authorize URL, échange de code, refresh token, activités, athlète.
-// Utilise fetch natif (Node 18+/Vercel) ou undici si installé.
+// Utilise fetch natif (Node 18+/Vercel).
 
 import { getEnv, getRedirectUri } from "@/config/env";
 import { logger } from "@/lib/logger";
@@ -87,4 +87,48 @@ export async function refreshAccessToken(refreshToken: string): Promise<StravaTo
 }
 
 export async function fetchActivities(accessToken: string, after?: number) {
-  const url = new URL(`${STRAVA_API_BAS
+  const url = new URL(`${STRAVA_API_BASE}/athlete/activities`);
+  url.searchParams.set("per_page", "50");
+  if (after) url.searchParams.set("after", String(after));
+
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    // Strava supporte GET simple ; pas besoin d'autres headers.
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    logger.error("Strava activities fetch failed", { status: res.status, text });
+    throw new Error(`Strava activities fetch failed: ${res.status}`);
+  }
+
+  return res.json();
+}
+
+export async function fetchActivity(accessToken: string, id: string) {
+  const res = await fetch(`${STRAVA_API_BASE}/activities/${id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    logger.error("Strava activity fetch failed", { status: res.status, text });
+    throw new Error(`Strava activity fetch failed: ${res.status}`);
+  }
+
+  return res.json();
+}
+
+export async function fetchAthlete(accessToken: string) {
+  const res = await fetch(`${STRAVA_API_BASE}/athlete`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    logger.error("Strava athlete fetch failed", { status: res.status, text });
+    throw new Error(`Strava athlete fetch failed: ${res.status}`);
+  }
+
+  return res.json();
+}
