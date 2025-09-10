@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
 
   const authorizeUrl = `${STRAVA_OAUTH_BASE}/authorize?${params.toString()}`;
   logger.info("[openai-authorize] redirect", { user_id, authorizeUrl, state });
+  logger.info("[openai-authorize] params", { user_id, openai_redirect });
 
   return NextResponse.redirect(authorizeUrl, { status: 302 });
 }
-logger.info("[openai-authorize] params", { user_id, openai_redirect });
