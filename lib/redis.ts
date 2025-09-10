@@ -1,6 +1,6 @@
 // lib/redis.ts
 // Client Redis (Upstash) + helpers typés pour stocker états OAuth et tokens Strava.
-// Utilise Redis REST (serverless friendly) et JSON.stringify/parse pour valeurs complexes.
+// Corrigé : types de retour alignés sur @upstash/redis (string | null pour set).
 
 import { Redis } from "@upstash/redis";
 import { getDefaultTtlSeconds } from "@/config/env";
@@ -10,20 +10,18 @@ let _redis: Redis | null = null;
 
 export function redis(): Redis {
   if (_redis) return _redis;
-  // Charge automatiquement UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN depuis l'env
   _redis = Redis.fromEnv();
   return _redis!;
 }
 
 // --------- Namespaces de clés ---------
-// Sépare clairement les espaces pour éviter les collisions et faciliter la purge ciblée.
 export const k = {
-  oauthState: (state: string) => `state:${state}`,               // stocke tool_redirect_uri, createdAt
-  tokensByAthlete: (athleteId: number | string) => `tokens:${athleteId}`, // access/refresh/expiry
-  athleteIndexByUser: (userId: string) => `athleteIndex:${userId}`,       // mappe user GPT → athleteId
+  oauthState: (state: string) => `state:${state}`,
+  tokensByAthlete: (athleteId: number | string) => `tokens:${athleteId}`,
+  athleteIndexByUser: (userId: string) => `athleteIndex:${userId}`,
 };
 
-// --------- Types utiles (pour JSON) ---------
+// --------- Types ---------
 export interface OAuthStateRecord {
   tool_redirect_uri?: string | null;
   createdAt: number; // epoch ms
@@ -43,14 +41,14 @@ export async function setStr(
   key: string,
   value: string,
   ttlSeconds: number = getDefaultTtlSeconds()
-): Promise<"OK" | null> {
+): Promise<string | null> {
   try {
     if (ttlSeconds > 0) {
+      // @upstash/redis typings: returns Promise<"OK" | null> but can be typed as string | null
       return await redis().set(key, value, { ex: ttlSeconds });
     }
     return await redis().set(key, value);
   } catch (err) {
-    // Ne pas throw pour éviter de casser le flow OAuth ; laisse l'appelant décider si nécessaire
     console.error("[redis.setStr] error", { key, err });
     return null;
   }
@@ -74,12 +72,12 @@ export async function delKey(key: string): Promise<number> {
   }
 }
 
-// --------- Helpers JSON (hauts niveaux) ---------
+// --------- Helpers JSON ---------
 export async function setJSON<T>(
   key: string,
   value: T,
   ttlSeconds: number = getDefaultTtlSeconds()
-): Promise<"OK" | null> {
+): Promise<string | null> {
   try {
     const serialized = JSON.stringify(value);
     return await setStr(key, serialized, ttlSeconds);
@@ -100,7 +98,7 @@ export async function getJSON<T = unknown>(key: string): Promise<T | null> {
   }
 }
 
-// --------- Helpers dédiés (états OAuth & tokens) ---------
+// --------- Helpers dédiés ---------
 export async function saveOAuthState(
   state: string,
   record: OAuthStateRecord,
@@ -122,7 +120,6 @@ export async function saveTokens(
   tokens: TokenRecord,
   ttlSeconds?: number
 ) {
-  // Par sécurité, on force updatedAt côté serveur
   const payload: TokenRecord = { ...tokens, updatedAt: Date.now() };
   return setJSON<TokenRecord>(k.tokensByAthlete(athleteId), payload, ttlSeconds);
 }
@@ -135,7 +132,6 @@ export async function deleteTokens(athleteId: number) {
   return delKey(k.tokensByAthlete(athleteId));
 }
 
-// --------- Index user→athlete (facultatif, utile si tu lies un user GPT à un athlete Strava) ---------
 export async function saveAthleteIndex(userId: string, athleteId: number) {
   return setStr(k.athleteIndexByUser(userId), String(athleteId));
 }
