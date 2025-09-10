@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { genReqId, renderFallbackHtml } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 import { readOAuthState, deleteOAuthState, saveTokens } from "@/lib/redis";
-import { exchangeCodeForToken } from "@/lib/strava";
+import { exchangeCodeForToken, StravaHttpError } from "@/lib/strava";
 import { mapStravaTokenResponse } from "@/lib/tokens";
 
 export async function GET(req: NextRequest) {
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
 
   try {
     logger.info("[callback] exchanging code→token", { reqId });
-    const tokenRes = await exchangeCodeForToken(code); // log détaillé côté lib en cas d'échec
+    const tokenRes = await exchangeCodeForToken(code);
     const mapped = mapStravaTokenResponse(tokenRes);
     await saveTokens(mapped.athlete_id, mapped);
 
@@ -65,13 +65,15 @@ export async function GET(req: NextRequest) {
     logger.warn("[callback] no tool_redirect_uri in state, serving fallback", { reqId });
     return renderFallbackHtml("Finalisation… Retour automatique indisponible.");
   } catch (err: any) {
-    // exchangeCodeForToken logge déjà le body d’erreur Strava
-    logger.error("[callback] token exchange failed", {
-      reqId,
-      err: String(err?.message || err),
-      t: `${Date.now() - t0}ms`,
-    });
-    // 502 = erreur côté provider OAuth
+    if (err instanceof StravaHttpError) {
+      // 🔎 TEMP : renvoyer le détail provider pour diagnostiquer (retire une fois corrigé)
+      logger.error("[callback] provider error", { reqId, where: err.where, status: err.status, body: err.body });
+      return NextResponse.json(
+        { ok: false, error: "provider_400", provider: { where: err.where, status: err.status, body: err.body } },
+        { status: 502 }
+      );
+    }
+    logger.error("[callback] token exchange failed", { reqId, err: String(err?.message || err), t: `${Date.now() - t0}ms` });
     return NextResponse.json({ ok: false, error: "token_exchange_failed" }, { status: 502 });
   }
 }

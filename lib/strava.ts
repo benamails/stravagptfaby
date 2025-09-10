@@ -4,6 +4,19 @@ import { logger } from "@/lib/logger";
 const STRAVA_API_BASE = "https://www.strava.com/api/v3";
 const STRAVA_OAUTH_BASE = "https://www.strava.com/oauth";
 
+/** Erreur riche pour propager status + body (pour debug) */
+export class StravaHttpError extends Error {
+  status: number;
+  body: string;
+  where: string;
+  constructor(where: string, status: number, body: string) {
+    super(`${where}_${status}`);
+    this.status = status;
+    this.body = body;
+    this.where = where;
+  }
+}
+
 export interface StravaTokenResponse {
   token_type: "Bearer";
   access_token: string;
@@ -30,26 +43,32 @@ export function buildAuthorizeUrl(state: string): string {
 
 export async function exchangeCodeForToken(code: string): Promise<StravaTokenResponse> {
   const { STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET } = getEnv();
+  const body = new URLSearchParams({
+    client_id: STRAVA_CLIENT_ID,
+    client_secret: STRAVA_CLIENT_SECRET,
+    code,
+    grant_type: "authorization_code",
+  });
+  // Strava n'exige pas redirect_uri ici tant que le domaine matche, mais si besoin :
+  // body.set("redirect_uri", getRedirectUri());
+
   const res = await fetch(`${STRAVA_OAUTH_BASE}/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: STRAVA_CLIENT_ID,
-      client_secret: STRAVA_CLIENT_SECRET,
-      code,
-      grant_type: "authorization_code"
-    })
+    body,
   });
+
   if (!res.ok) {
     const text = await res.text();
     logger.error("Strava token exchange failed", { status: res.status, body: text });
-    throw new Error(`strava_token_exchange_${res.status}`);
+    throw new StravaHttpError("token_exchange", res.status, text);
   }
   return (await res.json()) as StravaTokenResponse;
 }
 
 export async function refreshAccessToken(refreshToken: string): Promise<StravaTokenResponse> {
   const { STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET } = getEnv();
+
   const res = await fetch(`${STRAVA_OAUTH_BASE}/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -60,10 +79,11 @@ export async function refreshAccessToken(refreshToken: string): Promise<StravaTo
       refresh_token: refreshToken
     })
   });
+
   if (!res.ok) {
     const text = await res.text();
     logger.error("Strava token refresh failed", { status: res.status, body: text });
-    throw new Error(`strava_token_refresh_${res.status}`);
+    throw new StravaHttpError("token_refresh", res.status, text);
   }
   return (await res.json()) as StravaTokenResponse;
 }
@@ -76,7 +96,7 @@ export async function fetchActivities(accessToken: string, after?: number) {
   if (!res.ok) {
     const text = await res.text();
     logger.error("Strava activities fetch failed", { status: res.status, body: text });
-    throw new Error(`strava_activities_${res.status}`);
+    throw new StravaHttpError("activities", res.status, text);
   }
   return res.json();
 }
@@ -86,7 +106,7 @@ export async function fetchActivity(accessToken: string, id: string) {
   if (!res.ok) {
     const text = await res.text();
     logger.error("Strava activity fetch failed", { status: res.status, body: text });
-    throw new Error(`strava_activity_${res.status}`);
+    throw new StravaHttpError("activity", res.status, text);
   }
   return res.json();
 }
@@ -96,7 +116,7 @@ export async function fetchAthlete(accessToken: string) {
   if (!res.ok) {
     const text = await res.text();
     logger.error("Strava athlete fetch failed", { status: res.status, body: text });
-    throw new Error(`strava_athlete_${res.status}`);
+    throw new StravaHttpError("athlete", res.status, text);
   }
   return res.json();
 }
