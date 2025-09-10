@@ -39,3 +39,4 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.redirect(authorizeUrl, { status: 302 });
 }
+logger.info("[openai-authorize] params", { user_id, openai_redirect });
