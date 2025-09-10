@@ -7,11 +7,10 @@ import { saveTokens, saveAthleteIndex } from "@/lib/redis";
 import { logger } from "@/lib/logger";
 
 /**
- * Accepts BOTH JSON and x-www-form-urlencoded bodies from the Builder:
- * - expects: code, redirect_uri (ChatGPT callback), optional user_id
- * - exchanges code with Strava using the SAME redirect_uri
- * - saves tokens, and if user_id provided, links user_id ↔ athlete_id
- * - returns provider error body when available (temporary for debug)
+ * Accepte JSON ou x-www-form-urlencoded.
+ * Attend: code, redirect_uri (callback ChatGPT), user_id (optionnel).
+ * Echange le code chez Strava, stocke les vrais tokens côté serveur,
+ * et retourne un "access_token" OAUTH FACTICE pour satisfaire le Builder (sans exposer les secrets Strava).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -31,7 +30,7 @@ export async function POST(req: NextRequest) {
       redirect_uri = form.get("redirect_uri")?.toString();
       user_id = form.get("user_id")?.toString();
     } else {
-      // Try both ways anyway (some proxies strip content-type)
+      // Try both
       try {
         const body = await req.json();
         code = body?.code;
@@ -59,20 +58,24 @@ export async function POST(req: NextRequest) {
         {
           ok: false,
           error: "missing_code_or_redirect_uri",
-          hint: "Token URL must receive 'code' and the SAME 'redirect_uri' that was used at /authorize (ChatGPT callback).",
+          hint: "Token URL must receive 'code' and the SAME 'redirect_uri' used at /authorize (ChatGPT callback).",
         },
         { status: 400 }
       );
     }
 
-    // Exchange with Strava using the EXACT same redirect_uri ChatGPT sent back
+    // Echange chez Strava avec le MEME redirect_uri que ChatGPT a utilisé
     const tokenRes = await exchangeCodeForToken(code, redirect_uri);
     const mapped = mapStravaTokenResponse(tokenRes);
 
+    // Stockage serveur des vrais tokens Strava
     await saveTokens(mapped.athlete_id, mapped);
 
+    // Lien user ↔ athlete si présent (Option B)
+    let linked = false;
     if (user_id) {
       await saveAthleteIndex(String(user_id), Number(mapped.athlete_id));
+      linked = true;
       logger.info("[token-openai] linked user to athlete", {
         user_id,
         athlete_id: mapped.athlete_id,
@@ -83,15 +86,35 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({
+    /**
+     * IMPORTANT pour le Builder:
+     * On retourne un payload OAUTH "standard" pour satisfaire la validation:
+     * - access_token: jeton OPAQUE factice (ne révèle pas le token Strava)
+     * - token_type: "Bearer"
+     * - expires_in: durée nominale (ex. 3600s)
+     * - scope: nominal
+     * On inclut AUSSI nos champs utiles (ok, athlete_id, expires_at, linked).
+     */
+    const responseBody = {
+      // Champs attendus par OpenAI Actions OAuth
+      access_token: `tool-${mapped.athlete_id}-${Math.random().toString(36).slice(2)}`,
+      token_type: "Bearer",
+      expires_in: 3600,
+      scope: "strava-proxy",
+
+      // Nos infos applicatives
       ok: true,
       athlete_id: mapped.athlete_id,
       expires_at: mapped.expires_at,
-      linked: !!user_id,
+      linked,
+    };
+
+    return new NextResponse(JSON.stringify(responseBody), {
+      status: 200,
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
     });
   } catch (err: any) {
     if (err instanceof StravaHttpError) {
-      // TEMP: bubble up provider error to see exact reason of failure
       logger.error("[token-openai] provider error", {
         where: err.where,
         status: err.status,
