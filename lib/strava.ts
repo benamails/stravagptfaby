@@ -57,9 +57,12 @@ export function buildAuthorizeUrl(state: string): string {
 }
 
 /** Échange le code contre des tokens (force redirect_uri pour éviter invalid_grant) */
-export async function exchangeCodeForToken(code: string): Promise<StravaTokenResponse> {
+export async function exchangeCodeForToken(
+  code: string,
+  overrideRedirectUri?: string
+): Promise<StravaTokenResponse> {
   const { STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET } = getEnv();
-  const redirectUri = getRedirectUri();
+  const redirectUri = overrideRedirectUri || getRedirectUri();
 
   const res = await fetch(`${STRAVA_OAUTH_BASE}/token`, {
     method: "POST",
@@ -69,7 +72,7 @@ export async function exchangeCodeForToken(code: string): Promise<StravaTokenRes
       client_secret: STRAVA_CLIENT_SECRET,
       grant_type: "authorization_code",
       code,
-      redirect_uri: redirectUri,
+      redirect_uri: redirectUri, // doit matcher EXACTEMENT celui utilisé à /authorize
     }),
   });
 
@@ -78,7 +81,6 @@ export async function exchangeCodeForToken(code: string): Promise<StravaTokenRes
     logger.error("Strava token exchange failed", { status: res.status, body: text });
     throw new StravaHttpError("token_exchange", res.status, text);
   }
-
   return (await res.json()) as StravaTokenResponse;
 }
 

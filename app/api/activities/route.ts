@@ -1,7 +1,3 @@
-// app/api/activities/route.ts
-// Liste les activités récentes de l'athlète connecté (par défaut: 28 jours).
-// Rafraîchit automatiquement le token si nécessaire, normalise la sortie.
-
 import { NextRequest } from "next/server";
 import { genReqId, getAfterTimestamp, jsonOk, jsonError } from "@/lib/utils";
 import { logger } from "@/lib/logger";
@@ -13,42 +9,24 @@ import { readAthleteIndex } from "@/lib/redis";
 export async function GET(req: NextRequest) {
   const reqId = genReqId();
   const t0 = Date.now();
-
   try {
     const url = new URL(req.url);
-    const userId = url.searchParams.get("user_id"); // identifiant GPT (optionnel)
+    const userId = url.searchParams.get("user_id");
     const days = parseInt(url.searchParams.get("days") || "28", 10);
-
-    if (!userId) {
-      return jsonError("Missing user_id", 400);
-    }
+    if (!userId) return jsonError("Missing user_id", 400);
 
     const athleteId = await readAthleteIndex(userId);
-    if (!athleteId) {
-      return jsonError("No athlete linked to this user_id", 404);
-    }
+    if (!athleteId) return jsonError("No athlete linked to this user_id", 404);
 
     const accessToken = await getValidAccessToken(athleteId);
     const after = getAfterTimestamp(days);
-
     const raw = await fetchActivities(accessToken, after);
     const activities = normalizeActivities(raw);
 
-    logger.info("[activities] success", {
-      reqId,
-      userId,
-      athleteId,
-      count: activities.length,
-      t: `${Date.now() - t0}ms`,
-    });
-
+    logger.info("[activities] success", { reqId, userId, athleteId, count: activities.length, t: `${Date.now() - t0}ms` });
     return jsonOk(activities);
   } catch (err: any) {
-    logger.error("[activities] failed", {
-      reqId,
-      err: String(err?.message || err),
-      t: `${Date.now() - t0}ms`,
-    });
+    logger.error("[activities] failed", { reqId, err: String(err?.message || err), t: `${Date.now() - t0}ms` });
     return jsonError("Failed to fetch activities", 500);
   }
 }

@@ -3,58 +3,59 @@ info:
   title: Strava GPT Backend
   version: "1.0.0"
   description: >
-    Actions pour initier la connexion Strava et récupérer les données d'entraînement
-    (athlète, activités récentes, détail d’une activité). Les tokens sont gérés côté serveur
-    (Redis). Aucun secret n’est exposé au GPT.
+    Backend pour connecter un utilisateur à Strava puis lire ses données (profil, activités).
+    Les secrets et tokens sont gérés côté serveur (Redis). Aucun secret n'est exposé au GPT.
+
 servers:
   - url: https://stravagptfaby.vercel.app
     description: Production
 
 tags:
   - name: oauth
-    description: Démarrage de l’authentification Strava
+    description: Démarrage de l’authentification Strava (génère et persiste le state)
   - name: data
-    description: Lecture des données Strava (nécessite lien user_id ↔ athlete)
+    description: Lecture des données Strava liées à un user_id
 
 paths:
   /api/auth/strava:
     get:
       tags: [oauth]
       operationId: startStravaOAuth
-      summary: Démarre le flow OAuth Strava
+      summary: Démarre l’OAuth Strava et redirige vers Strava
       description: |
-        Redirige l’utilisateur vers Strava pour autorisation. **Important :** passer `tool_redirect_uri`
-        tel que fourni par le Builder (le GPT la transmettra), afin de revenir automatiquement
-        dans la conversation à la fin du flow.
+        Génère un `state` stocké côté serveur (Redis), puis redirige vers Strava.
+        **Toujours** appeler ce endpoint (et non l’URL Strava directe).
       parameters:
+        - in: query
+          name: user_id
+          required: true
+          description: Identifiant applicatif de l’utilisateur GPT (servira à lier l’athlète).
+          schema: { type: string }
         - in: query
           name: tool_redirect_uri
           required: false
-          schema:
-            type: string
-            format: uri
-          description: URL de retour conversation. Le GPT/Builder peut l’injecter automatiquement.
+          description: URL de retour conversation (si fournie par le Builder).
+          schema: { type: string, format: uri }
       responses:
         "302":
           description: Redirection vers Strava /oauth/authorize
         "400":
-          description: Paramètres manquants
+          description: Paramètre manquant
         "500":
-          description: Erreur serveur
+          description: Échec de persistance du state
       x-openai-isConsequential: false
 
   /api/athlete:
     get:
       tags: [data]
       operationId: getAthlete
-      summary: Récupère le profil athlète lié au user_id
+      summary: Récupère le profil athlète lié à un user_id
       parameters:
         - in: query
           name: user_id
           required: true
-          schema:
-            type: string
-          description: Identifiant applicatif de l’utilisateur GPT (mappé côté serveur à un athleteId Strava).
+          schema: { type: string }
+          description: Identifiant applicatif lié à un athleteId (créé par le callback OAuth).
       responses:
         "200":
           description: Profil athlète
@@ -72,23 +73,18 @@ paths:
     get:
       tags: [data]
       operationId: listActivities
-      summary: Liste les activités récentes (par défaut sur 28 jours)
+      summary: Liste les activités récentes
       parameters:
         - in: query
           name: user_id
           required: true
-          schema:
-            type: string
-          description: Identifiant applicatif de l’utilisateur GPT (lié à un athleteId).
+          schema: { type: string }
+          description: Identifiant applicatif lié à un athleteId.
         - in: query
           name: days
           required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 365
-            default: 28
-          description: Fenêtre de récupération en jours (par défaut 28).
+          schema: { type: integer, minimum: 1, maximum: 365, default: 28 }
+          description: Fenêtre de récupération en jours (défaut 28).
       responses:
         "200":
           description: Liste d’activités normalisées
@@ -111,15 +107,13 @@ paths:
         - in: path
           name: id
           required: true
-          schema:
-            type: string
+          schema: { type: string }
           description: ID Strava de l’activité
         - in: query
           name: user_id
           required: true
-          schema:
-            type: string
-          description: Identifiant applicatif de l’utilisateur GPT (lié à un athleteId).
+          schema: { type: string }
+          description: Identifiant applicatif lié à un athleteId.
       responses:
         "200":
           description: Activité normalisée
@@ -138,19 +132,13 @@ components:
     OkWrapper:
       type: object
       properties:
-        ok:
-          type: boolean
-          example: true
+        ok: { type: boolean, example: true }
 
     ErrorWrapper:
       type: object
       properties:
-        ok:
-          type: boolean
-          example: false
-        error:
-          type: string
-          example: "Failed to fetch activities"
+        ok: { type: boolean, example: false }
+        error: { type: string, example: "Failed to fetch activities" }
 
     Athlete:
       type: object
@@ -173,7 +161,7 @@ components:
         name: { type: string, example: "Course à pied le matin" }
         date: { type: string, example: "2025-08-31 10:08" }
         suffer_score: { type: number, nullable: true, example: 22 }
-        distance_km: { type: number, example: 13.6186 }
+        distance_km: { type: number, example: 13.62 }
         time_moving: { type: integer, example: 4835, description: "secondes" }
         time_elapsed: { type: integer, example: 4971, description: "secondes" }
         avg_hr: { type: number, nullable: true, example: 124.6 }
@@ -185,8 +173,8 @@ components:
         type: { type: string, example: "Run" }
         commute: { type: boolean, example: false }
         avg_cadence: { type: number, nullable: true, example: 88.4 }
-        intensity: { type: number, nullable: true, example: 16.3806 }
-        charge: { type: number, nullable: true, example: 223.0803 }
+        intensity: { type: number, nullable: true, example: 16.38 }
+        charge: { type: number, nullable: true, example: 223.08 }
         year_week: { type: string, example: "2025-35" }
 
     OkAthleteResponse:
