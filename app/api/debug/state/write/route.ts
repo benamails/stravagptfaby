@@ -3,6 +3,10 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 
+/**
+ * GET /api/debug/state/write?state=test123
+ * Écrit state:test123 puis relit la valeur pour valider l'écriture/lecture.
+ */
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const state = url.searchParams.get("state") || Math.random().toString(36).slice(2);
