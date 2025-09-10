@@ -1,204 +1,95 @@
 openapi: 3.1.0
-info:
+info: 
   title: Strava GPT Backend
-  version: "1.0.0"
-  description: >
-    Backend pour connecter un utilisateur à Strava puis lire ses données (profil, activités).
-    Les secrets et tokens sont gérés côté serveur (Redis). Aucun secret n'est exposé au GPT.
-
+  version: 1.0.0
 servers:
   - url: https://stravagptfaby.vercel.app
-    description: Production
-
-tags:
-  - name: oauth
-    description: Démarrage de l’authentification Strava (génère et persiste le state)
-  - name: data
-    description: Lecture des données Strava liées à un user_id
-
 paths:
-  /api/auth/strava:
+  /api/oauth/openai-authorize:
     get:
-      tags: [oauth]
-      operationId: startStravaOAuth
-      summary: Démarre l’OAuth Strava et redirige vers Strava
-      description: |
-        Génère un `state` stocké côté serveur (Redis), puis redirige vers Strava.
-        **Toujours** appeler ce endpoint (et non l’URL Strava directe).
+      tags:
+        - oauth
+      operationId: openaiAuthorize
+      summary: Prépare le state et redirige vers Strava avec redirect_uri=ChatGPT
       parameters:
         - in: query
           name: user_id
           required: true
-          description: Identifiant applicatif de l’utilisateur GPT (servira à lier l’athlète).
-          schema: { type: string }
+          schema:
+            type: string
         - in: query
-          name: tool_redirect_uri
-          required: false
-          description: URL de retour conversation (si fournie par le Builder).
-          schema: { type: string, format: uri }
+          name: redirect_uri
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: URL de callback ChatGPT (variable du Builder)
       responses:
         "302":
-          description: Redirection vers Strava /oauth/authorize
-        "400":
-          description: Paramètre manquant
-        "500":
-          description: Échec de persistance du state
+          description: Redirection vers Strava
       x-openai-isConsequential: false
-
-  /api/athlete:
-    get:
-      tags: [data]
-      operationId: getAthlete
-      summary: Récupère le profil athlète lié à un user_id
-      parameters:
-        - in: query
-          name: user_id
-          required: true
-          schema: { type: string }
-          description: Identifiant applicatif lié à un athleteId (créé par le callback OAuth).
+  /api/oauth/token-openai:
+    post:
+      tags:
+        - oauth
+      operationId: openaiToken
+      summary: Échange le code contre des tokens Strava (via backend proxy)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - code
+                - redirect_uri
+              properties:
+                code:
+                  type: string
+                redirect_uri:
+                  type: string
+                  format: uri
       responses:
         "200":
-          description: Profil athlète
+          description: OK, tokens sauvegardés côté serveur
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OkAthleteResponse"
-        "404":
-          description: Aucun athlète lié à ce user_id
-        "500":
-          description: Erreur serveur
-      x-openai-isConsequential: false
-
-  /api/activities:
-    get:
-      tags: [data]
-      operationId: listActivities
-      summary: Liste les activités récentes
-      parameters:
-        - in: query
-          name: user_id
-          required: true
-          schema: { type: string }
-          description: Identifiant applicatif lié à un athleteId.
-        - in: query
-          name: days
-          required: false
-          schema: { type: integer, minimum: 1, maximum: 365, default: 28 }
-          description: Fenêtre de récupération en jours (défaut 28).
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  athlete_id:
+                    type: integer
+                    example: 12345678
+                  expires_at:
+                    type: integer
+                    example: 1758000000
+        "502":
+          description: Provider error
+      x-openai-isConsequential: true
+  /api/link:
+    post:
+      tags:
+        - oauth
+      operationId: linkUserAthlete
+      summary: Lie un user_id GPT à l’athlete_id Strava
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - athlete_id
+              properties:
+                user_id:
+                  type: string
+                athlete_id:
+                  type: integer
       responses:
         "200":
-          description: Liste d’activités normalisées
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/OkActivitiesResponse"
-        "404":
-          description: Aucun athlète lié à ce user_id
-        "500":
-          description: Erreur serveur
-      x-openai-isConsequential: false
-
-  /api/activities/{id}:
-    get:
-      tags: [data]
-      operationId: getActivity
-      summary: Détail d’une activité
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string }
-          description: ID Strava de l’activité
-        - in: query
-          name: user_id
-          required: true
-          schema: { type: string }
-          description: Identifiant applicatif lié à un athleteId.
-      responses:
-        "200":
-          description: Activité normalisée
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/OkActivityResponse"
-        "404":
-          description: Aucun athlète lié à ce user_id
-        "500":
-          description: Erreur serveur
-      x-openai-isConsequential: false
-
-components:
-  schemas:
-    OkWrapper:
-      type: object
-      properties:
-        ok: { type: boolean, example: true }
-
-    ErrorWrapper:
-      type: object
-      properties:
-        ok: { type: boolean, example: false }
-        error: { type: string, example: "Failed to fetch activities" }
-
-    Athlete:
-      type: object
-      properties:
-        id: { type: integer, example: 12345678 }
-        username: { type: string, nullable: true, example: "benjamin" }
-        firstname: { type: string, example: "Benjamin" }
-        lastname: { type: string, example: "X" }
-        sex: { type: string, nullable: true, example: "M" }
-        weight: { type: number, nullable: true, example: 72.5 }
-        country: { type: string, nullable: true, example: "FR" }
-        city: { type: string, nullable: true, example: "Paris" }
-        profile: { type: string, nullable: true, example: "https://..." }
-        updated_at: { type: string, nullable: true, example: "2025-09-01T12:34:56Z" }
-
-    NormalizedActivity:
-      type: object
-      properties:
-        id: { type: integer, example: 16711309904 }
-        name: { type: string, example: "Course à pied le matin" }
-        date: { type: string, example: "2025-08-31 10:08" }
-        suffer_score: { type: number, nullable: true, example: 22 }
-        distance_km: { type: number, example: 13.62 }
-        time_moving: { type: integer, example: 4835, description: "secondes" }
-        time_elapsed: { type: integer, example: 4971, description: "secondes" }
-        avg_hr: { type: number, nullable: true, example: 124.6 }
-        avg_watts: { type: number, nullable: true, example: null }
-        elevation: { type: number, example: 55 }
-        year: { type: integer, example: 2025 }
-        month: { type: integer, example: 8 }
-        week: { type: integer, example: 35 }
-        type: { type: string, example: "Run" }
-        commute: { type: boolean, example: false }
-        avg_cadence: { type: number, nullable: true, example: 88.4 }
-        intensity: { type: number, nullable: true, example: 16.38 }
-        charge: { type: number, nullable: true, example: 223.08 }
-        year_week: { type: string, example: "2025-35" }
-
-    OkAthleteResponse:
-      allOf:
-        - $ref: "#/components/schemas/OkWrapper"
-        - type: object
-          properties:
-            data:
-              $ref: "#/components/schemas/Athlete"
-
-    OkActivitiesResponse:
-      allOf:
-        - $ref: "#/components/schemas/OkWrapper"
-        - type: object
-          properties:
-            data:
-              type: array
-              items:
-                $ref: "#/components/schemas/NormalizedActivity"
-
-    OkActivityResponse:
-      allOf:
-        - $ref: "#/components/schemas/OkWrapper"
-        - type: object
-          properties:
-            data:
-              $ref: "#/components/schemas/NormalizedActivity"
+          description: Mapping créé
+      x-openai-isConsequential: true
