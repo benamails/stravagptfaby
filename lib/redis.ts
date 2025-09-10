@@ -155,3 +155,9 @@ export async function readAthleteIndex(userId: string) {
 export async function deleteAthleteIndex(userId: string) {
   return delKey(k.athleteIndexByUser(userId));
 }
+
+export interface OAuthStateRecord {
+  tool_redirect_uri?: string | null;
+  user_id?: string | null;       // ✅ new
+  createdAt: number;             // epoch ms
+}
