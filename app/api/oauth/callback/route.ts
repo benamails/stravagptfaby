@@ -5,11 +5,17 @@ export const revalidate = 0;
 import { NextRequest, NextResponse } from "next/server";
 import { genReqId, renderFallbackHtml } from "@/lib/utils";
 import { logger } from "@/lib/logger";
-import { readOAuthState, deleteOAuthState, saveTokens, saveAthleteIndex } from "@/lib/redis"; // ✅ add saveAthleteIndex
+import {
+  readOAuthState,
+  deleteOAuthState,
+  saveTokens,
+  saveAthleteIndex,
+} from "@/lib/redis";
 import { exchangeCodeForToken } from "@/lib/strava";
 import { mapStravaTokenResponse } from "@/lib/tokens";
 
-const APP_BASE_URL = process.env.APP_BASE_URL || "https://stravagptfaby.vercel.app";
+const APP_BASE_URL =
+  process.env.APP_BASE_URL || "https://stravagptfaby.vercel.app";
 const STRAVA_CALLBACK = `${APP_BASE_URL}/api/oauth/callback`;
 
 export async function GET(req: NextRequest) {
@@ -33,31 +39,54 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: errParam }, { status: 400 });
   }
   if (!code || !state) {
-    return NextResponse.json({ ok: false, error: "missing_code_or_state" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "missing_code_or_state" },
+      { status: 400 }
+    );
   }
 
   const stateRecord = await readOAuthState(state);
   if (!stateRecord) {
     logger.warn("[callback] invalid_state", { reqId, state });
-    return NextResponse.json({ ok: false, error: "invalid_state" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "invalid_state" },
+      { status: 400 }
+    );
   }
 
-  // On peut consommer l'état maintenant
+  // On peut consommer l’état maintenant
   await deleteOAuthState(state);
 
+  // ⚠️ Toutes les lectures passent par un indexation sûre :
+  const s = stateRecord as Record<string, unknown>;
+  const toolRedirect =
+    typeof s["tool_redirect_uri"] === "string"
+      ? (s["tool_redirect_uri"] as string)
+      : undefined;
+  const actionId =
+    (typeof s["action_id"] === "string"
+      ? (s["action_id"] as string)
+      : undefined) ??
+    (typeof s["openai_action_id"] === "string"
+      ? (s["openai_action_id"] as string)
+      : undefined);
+  const userId =
+    typeof s["user_id"] === "string" || typeof s["user_id"] === "number"
+      ? (s["user_id"] as string | number)
+      : undefined;
+
   try {
-    // ⚠️ exchangeCodeForToken doit poster avec redirect_uri = STRAVA_CALLBACK côté lib/strava
+    // ⚠️ exchangeCodeForToken doit POST avec redirect_uri = STRAVA_CALLBACK
     const tokenRes = await exchangeCodeForToken(code);
     const mapped = mapStravaTokenResponse(tokenRes);
 
     await saveTokens(mapped.athlete_id, mapped);
 
-    // ✅ si un user_id était présent dans le state, on crée le lien user_id → athleteId
-    if (stateRecord.user_id) {
-      await saveAthleteIndex(stateRecord.user_id, mapped.athlete_id);
+    if (userId) {
+      await saveAthleteIndex(userId, mapped.athlete_id);
       logger.info("[callback] athlete index saved", {
         reqId,
-        user_id: stateRecord.user_id,
+        user_id: userId,
         athlete_id: mapped.athlete_id,
       });
     }
@@ -69,25 +98,32 @@ export async function GET(req: NextRequest) {
       t: `${Date.now() - t0}ms`,
     });
 
-    const toolRedirect = stateRecord.tool_redirect_uri;
-    const actionId = stateRecord.action_id || stateRecord.openai_action_id;
     if (toolRedirect) {
       try {
         const back = new URL(toolRedirect);
         if (actionId) back.searchParams.set("action_id", String(actionId));
         back.searchParams.set("ok", "1");
-        logger.info("[callback] redirecting back to tool", { reqId, to: back.toString() });
+        logger.info("[callback] redirecting back to tool", {
+          reqId,
+          to: back.toString(),
+        });
         return NextResponse.redirect(back.toString(), { status: 302 });
       } catch {
-        logger.warn("[callback] bad tool_redirect_uri", { reqId, toolRedirect });
-        return renderFallbackHtml("Finalisation… Retour automatique indisponible.");
+        logger.warn("[callback] bad tool_redirect_uri", {
+          reqId,
+          toolRedirect,
+        });
+        return renderFallbackHtml(
+          "Finalisation… Retour automatique indisponible."
+        );
       }
     }
 
-    // Pas de tool_redirect_uri → on sert la page fallback (comportement attendu)
-    return renderFallbackHtml("Finalisation… Retour automatique indisponible.");
+    // Pas de tool_redirect_uri → fallback HTML
+    return renderFallbackHtml(
+      "Finalisation… Retour automatique indisponible."
+    );
   } catch (err: any) {
-    // Normalise erreurs Strava
     const name = err?.name || err?.constructor?.name;
     if (name === "StravaHttpError") {
       logger.error("[callback] provider_400", {
@@ -97,11 +133,21 @@ export async function GET(req: NextRequest) {
         body: err.body,
       });
       return NextResponse.json(
-        { ok: false, error: "provider_400", provider: { where: err.where, status: err.status, body: err.body } },
+        {
+          ok: false,
+          error: "provider_400",
+          provider: { where: err.where, status: err.status, body: err.body },
+        },
         { status: 502 }
       );
     }
-    logger.error("[callback] token_exchange_failed", { reqId, err: String(err) });
-    return NextResponse.json({ ok: false, error: "token_exchange_failed" }, { status: 502 });
+    logger.error("[callback] token_exchange_failed", {
+      reqId,
+      err: String(err),
+    });
+    return NextResponse.json(
+      { ok: false, error: "token_exchange_failed" },
+      { status: 502 }
+    );
   }
 }
