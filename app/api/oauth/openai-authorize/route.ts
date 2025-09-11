@@ -26,33 +26,38 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
 
-  // Valable pour OpenAI Actions: redirect_uri (retour conversation) et action_id éventuel
+  // Params fournis par l’Action OpenAI
   const toolRedirectUri = url.searchParams.get("redirect_uri") || "";
   const actionId = url.searchParams.get("action_id") || "";
 
-  // Optionnel: passe un user_id si tu veux relier plus tard user → athlete
+  // Optionnel: lier un user (string ou number)
   const userIdParam = url.searchParams.get("user_id");
   const userId =
     userIdParam && !Number.isNaN(Number(userIdParam))
       ? Number(userIdParam)
       : userIdParam || undefined;
 
-  // Optionnel: scopes override (par ex. ?scope=read,activity:read_all)
-  const scope =
-    url.searchParams.get("scope") || "read,activity:read_all";
+  // Optionnel: override des scopes
+  const scope = url.searchParams.get("scope") || "read,activity:read_all";
 
-  // Construire l'état et le persister pour lecture au callback
-  const stateObj = {
+  // Construit l'objet state avec les champs requis par ton type
+  type SaveStateArg = Parameters<typeof saveOAuthState>[1]; // infère le type attendu
+  const statePayload: SaveStateArg = {
+    // requis par ton OAuthStateRecord
+    createdAt: Date.now(),
+    // tes champs métier
     tool_redirect_uri: toolRedirectUri,
     action_id: actionId,
     user_id: userId,
     ts: Date.now(),
     nonce: crypto.randomUUID(),
-  };
-  const state = Buffer.from(JSON.stringify(stateObj)).toString("base64url");
+  } as SaveStateArg;
+
+  // Encodage base64url pour passer par Strava
+  const state = Buffer.from(JSON.stringify(statePayload)).toString("base64url");
 
   try {
-    await saveOAuthState(state, stateObj);
+    await saveOAuthState(state, statePayload);
   } catch (e) {
     logger.error("[openai-authorize] saveOAuthState failed", {
       reqId,
@@ -64,7 +69,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // URL d’authorize Strava → TOUJOURS rediriger vers TON callback backend
+  // Redirection vers Strava — toujours vers TON callback backend
   const authorize = new URL("https://www.strava.com/oauth/authorize");
   authorize.searchParams.set("client_id", STRAVA_CLIENT_ID);
   authorize.searchParams.set("response_type", "code");
