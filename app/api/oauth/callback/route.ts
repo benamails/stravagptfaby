@@ -54,10 +54,10 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // On peut consommer l’état maintenant
+  // Consommer l’état maintenant
   await deleteOAuthState(state);
 
-  // ✅ Cast via `unknown` avant Record<string, unknown> pour satisfaire TS
+  // Cast via unknown pour indexer proprement
   const s = stateRecord as unknown as Record<string, unknown>;
 
   const toolRedirect =
@@ -78,6 +78,9 @@ export async function GET(req: NextRequest) {
       ? (s["user_id"] as string | number)
       : undefined;
 
+  // 🔧 Normalise en string pour les APIs qui l’exigent
+  const userIdStr = userId !== undefined ? String(userId) : undefined;
+
   try {
     // ⚠️ exchangeCodeForToken doit POST avec redirect_uri = STRAVA_CALLBACK
     const tokenRes = await exchangeCodeForToken(code);
@@ -85,11 +88,11 @@ export async function GET(req: NextRequest) {
 
     await saveTokens(mapped.athlete_id, mapped);
 
-    if (userId) {
-      await saveAthleteIndex(userId, mapped.athlete_id);
+    if (userIdStr) {
+      await saveAthleteIndex(userIdStr, mapped.athlete_id);
       logger.info("[callback] athlete index saved", {
         reqId,
-        user_id: userId,
+        user_id: userIdStr,
         athlete_id: mapped.athlete_id,
       });
     }
