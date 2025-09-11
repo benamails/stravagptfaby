@@ -57,12 +57,14 @@ export async function GET(req: NextRequest) {
   // On peut consommer l’état maintenant
   await deleteOAuthState(state);
 
-  // ⚠️ Toutes les lectures passent par un indexation sûre :
-  const s = stateRecord as Record<string, unknown>;
+  // ✅ Cast via `unknown` avant Record<string, unknown> pour satisfaire TS
+  const s = stateRecord as unknown as Record<string, unknown>;
+
   const toolRedirect =
     typeof s["tool_redirect_uri"] === "string"
       ? (s["tool_redirect_uri"] as string)
       : undefined;
+
   const actionId =
     (typeof s["action_id"] === "string"
       ? (s["action_id"] as string)
@@ -70,6 +72,7 @@ export async function GET(req: NextRequest) {
     (typeof s["openai_action_id"] === "string"
       ? (s["openai_action_id"] as string)
       : undefined);
+
   const userId =
     typeof s["user_id"] === "string" || typeof s["user_id"] === "number"
       ? (s["user_id"] as string | number)
